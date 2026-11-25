@@ -34,6 +34,7 @@ main{padding:12px;max-width:560px;margin:0 auto}
 .kv div{background:#f8fafc;border-radius:12px;padding:10px}
 .kv b{display:block;font-size:20px;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
 .kv span{font-size:12px;color:var(--mut)}
+.kv b span,.kv small span,.kv b .dot{font-size:inherit}
 .chip{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
 .c-Completed{background:#dcfce7;color:#166534}.c-Covered{background:#fef3c7;color:#92400e}.c-Deduction{background:#fee2e2;color:#991b1b}
 .c-Admin{background:#dbeafe;color:#1e40af}.c-Missing{background:#ffedd5;color:#9a3412}.c-Weekend{background:#e2e8f0;color:#475569}.c-Fri{background:#f1f5f9;color:#475569}.c-None{background:#f1f5f9;color:#94a3b8}
@@ -189,7 +190,26 @@ function liveInfo(date, nowMin, rec, prayer, S) {
   else { out.prayerTime = w === 5 ? 11 * 60 + 45 : 14 * 60 + 30; }
   out.prayerName = w === 5 ? 'الجمعة' : 'العصر';
   out.prayerDiff = out.prayerTime - nowMin;
+  out.next = nextPrayer(date, nowMin, prayer);
   return out;
+}
+
+// Next prayer. prayer: map date -> [fajr,sunrise,dhuhr,asr,maghrib,isha] as "HH:MM" strings (index 0..5 after the date key)
+function prayerRow(date, prayer) {
+  if (!prayer) return null;
+  if (prayer[date]) return { row: prayer[date], approx: false };
+  const ks = Object.keys(prayer).sort(); if (!ks.length) return null;
+  const k = date < ks[0] ? ks[0] : ks[ks.length - 1];
+  return { row: prayer[k], approx: true };
+}
+function nextPrayer(date, nowMin, prayer) {
+  const t = prayerRow(date, prayer); if (!t) return null;
+  const fri = dow(date) === 5;
+  const list = [['الفجر', t.row[0]], [fri ? 'الجمعة' : 'الظهر', t.row[2]], ['العصر', t.row[3]], ['المغرب', t.row[4]], ['العشاء', t.row[5]]];
+  for (const [n, s] of list) { const m = tm(s); if (m != null && m > nowMin) return { name: n, time: m, diff: m - nowMin, approx: t.approx, tomorrow: false }; }
+  const tt = prayerRow(addDays(date, 1), prayer);
+  const m = tm(tt.row[0]);
+  return { name: 'الفجر', time: m, diff: 1440 - nowMin + m, approx: t.approx || tt.approx, tomorrow: true };
 }
 
 </script>
@@ -259,11 +279,14 @@ function rToday(){
   if(live.kind==='weekend')html+=`<p class="note">النهارده إجازة (سبت/أحد). تقدر تسجل لو اشتغلت، بس مفيش حساب تأخير أو خصم.</p>`;
   html+=`</div>`;
   if(live.kind!=='weekend'){
+    const lateRed=row.K>0&&row.x!=='mail';
+    const nx=live.next;
     html+=`<div class="card"><div class="kv">
-     <div><span>وقت الدخول</span><b class="${row.K>0&&row.x!=='mail'?'red':''}">${row.K>0&&row.x!=='mail'?'<span class="dot"></span> ':''}${rec.i||'--:--'}</b></div>
-     <div><span>الخروج بدون خصم</span><b>${live.exp!=null?fmt(live.exp):'--:--'}</b></div>
+     <div><span>وقت الدخول ← الخروج</span><b class="${lateRed?'red':''}">${lateRed?'<span class="dot"></span> ':''}${rec.i||'--:--'}${rec.o?' → <span style="color:var(--ink)">'+rec.o+'</span>':''}</b>
+       <small style="display:block;font-size:12px;color:var(--mut);margin-top:2px">${live.exp!=null?'الخروج بدون خصم <span class="ltr">'+fmt(live.exp)+'</span>':'الخروج بدون خصم --:--'}</small></div>
      <div><span>الباقي للخروج</span><b>${rec.o?'تم الخروج':live.exp!=null?(live.remaining>0?dur(live.remaining)+' ساعة':'تقدر تمشي ✓'):'--'}</b></div>
-     <div><span>${live.prayerName}</span><b>${live.prayerDiff>=0?'بعد '+dur(live.prayerDiff)+' ساعة':'من '+dur(-live.prayerDiff)+' ساعة'}</b></div>
+     <div style="grid-column:1/-1"><span>الصلاة القادمة</span><b>${nx?'بعد '+dur(nx.diff)+' ساعة':'--'}</b>
+       <small style="display:block;font-size:12px;color:var(--mut);margin-top:2px">${nx?nx.name+' · <span class="ltr">'+fmt(nx.time)+'</span>'+(nx.tomorrow?' (بكرة)':'')+(nx.approx?' · تقريبي (خارج جدول الصلاة)':''):''}</small></div>
     </div>
     <p class="note" style="margin:10px 0 0">سقف الخروج اليوم ${fmt(live.cap)}، مفيش أوفر تايم بعده.</p></div>`;
     // preview
